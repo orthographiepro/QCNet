@@ -1,0 +1,26 @@
+{
+    "name": "Remote QCNet",
+    "build": {
+        "dockerfile": "Dockerfile",
+        "context": ".."
+    },
+    
+    // Configure tool-specific properties
+    "customizations": {
+        "vscode": {
+            "settings": {
+                // Point VS Code's Python extension to the Conda environment
+                "python.defaultInterpreterPath": "/opt/conda/bin/python",
+                "terminal.integrated.defaultProfile.linux": "bash"
+            },
+            "extensions": [
+                "ms-python.python",
+                "ms-python.vscode-pylance"
+                // Add any other extensions you need (e.g., Jupyter, GitLens)
+            ]
+        }
+    },
+
+    // Run as the standard non-root user provided by the base image
+    "remoteUser": "vscode"
+}
