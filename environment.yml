@@ -236,4 +236,4 @@ dependencies:
   - zlib=1.2.13=h5eee18b_0
   - zstd=1.5.5=hc292b87_0
   - pip:
-    - av2==0.2.1
+    - av2==0.3.1

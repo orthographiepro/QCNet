@@ -12,8 +12,12 @@ RUN umask 0002 \
     && /opt/conda/bin/conda env update -n base -f /tmp/conda-tmp/environment.yml \
     && conda clean -afy
 
-# For Dataset Download 
-RUN conda install s5cmd -c conda-forge
-
-# Additional Requirements
+# Install additional python packages
 RUN conda run -n base pip install rtpt gpustat
+
+# Get additional runtime libraries
+# ... to do so, first get the key for yarn so apt may upgrade
+RUN rm -f /etc/apt/sources.list.d/yarn.list
+# RUN apt-key adv --recv-keys --keyserver hkp://keyserver.ubuntu.com 62D54FD4003F6525 
+RUN apt-get update  \
+    && apt-get install -y libgl1-mesa-dev libglib2.0-0
