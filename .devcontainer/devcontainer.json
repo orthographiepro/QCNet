@@ -22,5 +22,12 @@
     },
 
     // Run as the standard non-root user provided by the base image
-    "remoteUser": "vscode"
+    "remoteUser": "root",
+    "mounts": [
+        "source=/home/jhahnewald/datasets,target=/workspaces/datasets,type=bind,consistency=cached"
+    ],
+    "runArgs": [
+        "--shm-size", "100G",
+        "--gpus", "\"device=14,15\""
+    ]    
 }
