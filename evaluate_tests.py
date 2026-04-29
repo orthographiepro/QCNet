@@ -8,58 +8,80 @@ import pandas as pd
 import numpy as np 
 
 from tqdm import tqdm
+from pathlib import Path
+import click
 
 
-test_anno_path = "/workspaces/datasets/av2_mf_focal_test_annotations.parquet"
-submission_path = "/workspaces/QCNet/submission.parquet"
+test_anno_path = Path("/workspaces/datasets/av2_mp/av2_mf_focal_test_annotations.parquet")
+submission_path = Path("/workspaces/QCNet/results/QCNet_submission.parquet")
 
-gt_df = pd.read_parquet(test_anno_path)
-submission_df = pd.read_parquet(submission_path)
+@click.command()
+@click.option("--gt-path", default=test_anno_path, help="Path to the test annotations parquet file.")
+@click.option("--sub-path", default=submission_path, help="Path to the submission parquet file.")
+@click.option("--write-to", default=None, help="Path to write the computed metrics dataframe as a parquet file.")
+def main(gt_path, sub_path, write_to):
 
-gt_df_grouped =gt_df.groupby(["scenario_id", "track_id"])
-submission_df_grouped = submission_df.groupby(["scenario_id", "track_id"])
+    try:
+        gt_path = Path(gt_path)
+        sub_path = Path(sub_path)
+    except Exception as e:
+        print(f"Error occurred while parsing paths: {e}")
+        return
 
-metrics_df = pd.DataFrame(columns=["scenario_id", "track_id", "minADE", "minFDE", "brier_minADE", "brier_minFDE", "is_missed_prediction"])
+    gt_df = pd.read_parquet(gt_path)
+    submission_df = pd.read_parquet(sub_path)
 
-a = True
+    gt_df_grouped =gt_df.groupby(["scenario_id", "track_id"])
+    submission_df_grouped = submission_df.groupby(["scenario_id", "track_id"])
 
-for id_tuple, group in tqdm(gt_df_grouped):
-    (scenario_id, track_id) = id_tuple
+    metrics_df = pd.DataFrame(columns=["scenario_id", "track_id", "minADE6", "minFDE6", "brier_minADE6", "brier_minFDE6", "is_missed_prediction6", "minADE1", "minFDE1", "brier_minADE1", "brier_minFDE1", "is_missed_prediction1"])
 
-    pred = submission_df_grouped.get_group(id_tuple)
-    gt = group # gt_df_grouped.get_group(id_tuple)
-    
-    pred_track = np.moveaxis(
-        np.array(
-            [[* pred["predicted_trajectory_x"]], 
-            [*pred["predicted_trajectory_y"]]]
-        ),
-        source=[0, 1, 2], 
-        destination=[2, 0, 1],
-    )
-    pred_prob = pred["probability"].to_numpy()
+    for id_tuple, group in tqdm(gt_df_grouped):
+        (scenario_id, track_id) = id_tuple
 
-    gt_track = np.array([gt["gt_trajectory_x"].iloc[0], gt["gt_trajectory_y"].iloc[0]]).T
+        pred = submission_df_grouped.get_group(id_tuple)
+        gt = group # gt_df_grouped.get_group(id_tuple)
+        
+        pred_track = np.moveaxis(
+            np.array(
+                [[* pred["predicted_trajectory_x"]], 
+                [*pred["predicted_trajectory_y"]]]
+            ),
+            source=[0, 1, 2], 
+            destination=[2, 0, 1],
+        )
+        pred_prob = pred["probability"].to_numpy()
+        most_prob_index = pred_prob.argmax()
 
-    if a:
-        print(pred_prob)
-        print([(pr, pt[-1]) for (pr, pt) in zip(pred["probability"], pred["predicted_trajectory_x"])])
-        print([pred_track[:, 59, 0]])
-        a = False
+        gt_track = np.array([gt["gt_trajectory_x"].iloc[0], gt["gt_trajectory_y"].iloc[0]]).T
 
-    ade = metrics.compute_ade(pred_track, gt_track)
-    fde = metrics.compute_fde(pred_track, gt_track)
-    
-    metrics_df_row = {
-        "scenario_id": scenario_id,
-        "track_id": track_id,
-        "minADE": ade.min(),
-        "minFDE": fde.min(),
-        "brier_minADE": ade[ade.argmin()] + (1.0 - pred_prob[ade.argmin()])**2,
-        "brier_minFDE": fde[fde.argmin()] + (1.0 - pred_prob[fde.argmin()])**2,
-        "is_missed_prediction": metrics.compute_is_missed_prediction(pred_track, gt_track).min(),
-    }
-    metrics_df = pd.concat([metrics_df, pd.DataFrame(metrics_df_row, index=[0])], ignore_index=True)
+        ade = metrics.compute_ade(pred_track, gt_track)
+        fde = metrics.compute_fde(pred_track, gt_track)
+        
+        metrics_df_row = {
+            "scenario_id": scenario_id,
+            "track_id": track_id,
+            "minADE6": ade.min(),
+            "minFDE6": fde.min(),
+            "minADE1": ade[most_prob_index],
+            "minFDE1": fde[most_prob_index],
+            "brier_minADE6": ade[ade.argmin()] + (1.0 - pred_prob[ade.argmin()])**2,
+            "brier_minFDE6": fde[fde.argmin()] + (1.0 - pred_prob[fde.argmin()])**2,
+            "brier_minADE1": ade[most_prob_index] + (1.0 - pred_prob[most_prob_index])**2,
+            "brier_minFDE1": fde[most_prob_index] + (1.0 - pred_prob[most_prob_index])**2,
+            "is_missed_prediction6": metrics.compute_is_missed_prediction(pred_track, gt_track).min(),
+            "is_missed_prediction1": metrics.compute_is_missed_prediction(pred_track, gt_track)[most_prob_index],
+        }
+        metrics_df = pd.concat([metrics_df, pd.DataFrame(metrics_df_row, index=[0])], ignore_index=True)
 
-print(metrics_df[["minADE", "brier_minFDE", "minFDE", "brier_minADE", "is_missed_prediction"]].mean())
+    result: pd.DataFrame = metrics_df[["minADE6", "brier_minADE6", "brier_minFDE6", "minFDE6", "is_missed_prediction6", "minADE1", "brier_minADE1", "brier_minFDE1", "minFDE1", "is_missed_prediction1"]].mean()
+    print(result)
+    try:
+        with open(write_to, "w") as f:
+            print(sub_path.name, gt_path.name, file=f)
+            print(result, file=f)
+    except Exception as e:
+        print(f"Error occurred while writing to file: {e}")
 
+if __name__ == "__main__":
+    main()
